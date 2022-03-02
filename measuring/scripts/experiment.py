@@ -164,7 +164,7 @@ ALGORITHMS = [
             #"Hqc128",
             #"NtruPrimeNtrulpr653",
             #"NtruPrimeSntrup653",
-            #"BikeL1Fo",
+            #"BikeL1",
             #"FrodoKem640Shake",
 
             #"SikeP434",
@@ -182,7 +182,7 @@ ALGORITHMS = [
             #("Hqc128", "Hqc128", "RainbowIClassic"),
             #("NtruPrimeNtrulpr653", "NtruPrimeNtrulpr653", "Falcon512"),
             #("NtruPrimeSntrup653", "NtruPrimeSntrup653", "Falcon512"),
-            #("BikeL1Fo", "BikeL1Fo", "RainbowIClassic"),
+            #("BikeL1", "BikeL1", "RainbowIClassic"),
             #("FrodoKem640Shake", "FrodoKem640Shake", "SphincsSha256128sSimple"),
             #("SikeP434", "SikeP434", "RainbowIClassic"),
             # Minimal Finalist
