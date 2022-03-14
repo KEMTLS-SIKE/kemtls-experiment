@@ -97,7 +97,7 @@ class Experiment(NamedTuple):
 ALGORITHMS = [
     #  PQ Signed KEX
     Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    #Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal"),
 
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
@@ -360,7 +360,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
     (inpipe, outpipe) = multiprocessing.Pipe()
     server = ServerProcess(port, inpipe, experiment, cached_int)
     server.start()
-    time.sleep(1)
+    time.sleep(4)
 
     path = get_experiment_path(experiment)
     clientname = "tlsclient"
