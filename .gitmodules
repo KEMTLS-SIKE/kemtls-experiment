@@ -1,10 +1,10 @@
 [submodule "webpki"]
 	path = webpki
-	url = https://github.com/thomwiggers/webpki.git
+	url = https://github.com/KEMTLS-SIKE/webpki.git
 	branch = oqs-update
 [submodule "mk-cert"]
 	path = mk-cert
-	url = https://github.com/thomwiggers/mk-cert
+	url = https://github.com/KEMTLS-SIKE/mk-cert
 	branch = oqs-update
 [submodule "rustls"]
 	path = rustls
