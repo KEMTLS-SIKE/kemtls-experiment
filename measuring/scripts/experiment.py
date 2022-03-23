@@ -23,7 +23,7 @@ import sys
 # Original set of latencies
 #LATENCIES = ['2.684ms', '15.458ms', '39.224ms', '97.73ms']
 #LATENCIES = ["2.0ms"]
-LATENCIES = ['15.458ms', '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
+LATENCIES = ['15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
 LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
 NUM_PINGS = 10  # for measuring the practical latency
 #SPEEDS = [1000, 10]
@@ -92,12 +92,14 @@ class Experiment(NamedTuple):
     root: Optional[str] = None
     client_auth: Optional[str] = None
     client_ca: Optional[str] = None
+    async_encapsulation: bool = False
 
 
 ALGORITHMS = [
     #  PQ Signed KEX
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    #Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal", async_encapsulation=True),
 
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
@@ -216,7 +218,7 @@ ALGORITHMS = [
 def __validate_experiments() -> None:
     known_kems = [kem[0].upper() for kem in algorithms.kems] + ["X25519"]
     known_sigs = [sig[1] for sig in algorithms.signs] + ["RSA2048"]
-    for (_, kex, leaf, int, root, client_auth, client_ca) in ALGORITHMS:
+    for (_, kex, leaf, int, root, client_auth, client_ca, _) in ALGORITHMS:
         assert kex in known_kems, f"{kex} is not a known KEM"
         assert leaf in known_kems or leaf in known_sigs, f"{leaf} is not a known algorithm"
         assert int is None or int in known_sigs, f"{int} is not a known signature algorithm"
@@ -303,6 +305,10 @@ class ServerProcess(multiprocessing.Process):
             *self.clientauthopts,
             "http",
         ]
+
+        if self.experiment.async_encapsulation:
+            cmd.append("--async-encapsulation")
+
         logger.debug("Server cmd: %s", ' '.join(cmd))
         self.server_process = subprocess.Popen(
             cmd,
@@ -536,6 +542,8 @@ def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate,
     fileprefix = f"{experiment.kex}_{experiment.leaf}_{experiment.intermediate}"
     if not int_only:
         fileprefix += f"_{experiment.root}"
+    if experiment.async_encapsulation:
+        fileprefix += f"_async_encaps"
     if experiment.client_auth is not None:
         fileprefix += f"_clauth_{experiment.client_auth}_{experiment.client_ca}"
     fileprefix += f"_{rtt_ms}ms"
@@ -627,7 +635,7 @@ def main():
                 rate = 1000
             else:
                 rate = 10
-            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca) = experiment
+            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca, async_encapsulation) = experiment
             if type in ("pdk", "sign-cached") and not int_only:
                 # Skip PDK variants like KKDD, they don't make sense as the cert isn't sent.
                 continue
@@ -636,6 +644,7 @@ def main():
                 f"Experiment for {type} {kex_alg} {leaf} " +
                 (f"{intermediate} " if intermediate is not None else "") +
                 (f"{root} " if not int_only else "") +
+                (f"(async encaps) " if async_encapsulation else "") +
                 (f"(client auth: {client_auth} signed by {client_ca}) " if client_auth is not None else "") +
                 f"for {rtt_ms}ms latency with "
                 f"{'intermediate only' if int_only else 'full cert chain'} "
