@@ -83,6 +83,9 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+OPTION_ASYNC_ENCAPS = "async_encaps"
+OPTION_ASYNC_KEYPAIR = "async_keypair"
+
 class Experiment(NamedTuple):
     """Represents an experiment"""
     type: Union[Literal["sign"], Literal["pdk"], Literal["kemtls"], Literal["sign-cached"]]
@@ -92,14 +95,13 @@ class Experiment(NamedTuple):
     root: Optional[str] = None
     client_auth: Optional[str] = None
     client_ca: Optional[str] = None
-    async_encapsulation: bool = False
-
+    options: List[str] = []
 
 ALGORITHMS = [
     #  PQ Signed KEX
-    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    Experiment('sign', "SIKEP434COMPRESSEDASYNC", "Falcon512", "XMSS", "RainbowICircumzenithal", async_encapsulation=True),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
 
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
@@ -228,14 +230,13 @@ def __validate_experiments() -> None:
         assert client_ca is None or client_ca in known_sigs, f"{client_ca} is not a known sigalg"
 __validate_experiments()
 
-def only_unique_experiments() -> None:
+def only_unique_experiments(algos: List[Experiment]) -> List[Experiment]:
     """get unique experiments: one of each type"""
-    global ALGORITHMS
     seen = set()
     def update(exp: Experiment) -> Experiment:
-        seen.add((exp.type, exp.client_auth is None))
+        seen.add((exp.type, exp.client_auth is None, ",".join(exp.options)))
         return exp
-    ALGORITHMS = [update(exp) for exp in ALGORITHMS if (exp.type, exp.client_auth is None) not in seen]
+    return [update(exp) for exp in algos if (exp.type, exp.client_auth is None, ",".join(exp.options)) not in seen]
 
 TIMER_REGEX = re.compile(r"(?P<label>[A-Z ]+): (?P<timing>\d+) ns")
 
@@ -306,7 +307,7 @@ class ServerProcess(multiprocessing.Process):
             "http",
         ]
 
-        if self.experiment.async_encapsulation:
+        if OPTION_ASYNC_ENCAPS in self.experiment.options:
             cmd.append("--async-encapsulation")
 
         logger.debug("Server cmd: %s", ' '.join(cmd))
@@ -410,6 +411,9 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
             *clientauthopts,
             hostname,
         ]
+        if OPTION_ASYNC_KEYPAIR in experiment.options:
+            cmd.append(f"--async-keypair")
+
         logger.debug("Client cmd: %s", ' '.join(cmd))
         try:
             proc_result = subprocess.run(
@@ -542,8 +546,8 @@ def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate,
     fileprefix = f"{experiment.kex}_{experiment.leaf}_{experiment.intermediate}"
     if not int_only:
         fileprefix += f"_{experiment.root}"
-    if experiment.async_encapsulation:
-        fileprefix += f"_async_encaps"
+    if len(experiment.options) != 0:
+        fileprefix += f"_options_("+(",".join(experiment.options))+f")"
     if experiment.client_auth is not None:
         fileprefix += f"_clauth_{experiment.client_auth}_{experiment.client_ca}"
     fileprefix += f"_{rtt_ms}ms"
@@ -554,7 +558,7 @@ def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate,
 
 def setup_experiments() -> None:
     # get unique combinations
-    combinations = set(
+    combinations = only_unique_experiments(
         get_experiment_instantiation(experiment)
         for experiment in ALGORITHMS
     )
@@ -635,7 +639,7 @@ def main():
                 rate = 1000
             else:
                 rate = 10
-            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca, async_encapsulation) = experiment
+            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca, options) = experiment
             if type in ("pdk", "sign-cached") and not int_only:
                 # Skip PDK variants like KKDD, they don't make sense as the cert isn't sent.
                 continue
@@ -644,7 +648,7 @@ def main():
                 f"Experiment for {type} {kex_alg} {leaf} " +
                 (f"{intermediate} " if intermediate is not None else "") +
                 (f"{root} " if not int_only else "") +
-                (f"(async encaps) " if async_encapsulation else "") +
+                (f"("+(",".join(options))+") " if len(options) != 0 else "") +
                 (f"(client auth: {client_auth} signed by {client_ca}) " if client_auth is not None else "") +
                 f"for {rtt_ms}ms latency with "
                 f"{'intermediate only' if int_only else 'full cert chain'} "
@@ -700,7 +704,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2 or sys.argv[1] != "full":
         logger.warning("Running only one experiment of each type")
-        only_unique_experiments()
+        ALGORITHMS = only_unique_experiments(ALGORITHMS)
 
     logger.info("Sign experiments: {}".format(sum(1 for alg in ALGORITHMS if alg[0] == "sign")))
     logger.info("KEMTLS experiments: {}".format(sum(1 for alg in ALGORITHMS if alg[0] == "kemtls")))

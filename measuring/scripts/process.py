@@ -105,7 +105,7 @@ AVG_FIELDS = [
     "root",
     "clauth",
     "clca",
-    "asyncencaps",
+    "options",
     "int-only",
     "rtt",
     "drop_rate",
@@ -236,7 +236,7 @@ EXPERIMENT_REGEX = re.compile(
     r"(?P<type>(kemtls|sign|sign-cached|pdk))-(?P<cached>(int-chain|int-only))/"
     r"(?P<kex>[^_]+)_(?P<leaf>[^_]+)_(?P<int>[^_]+)(_(?P<root>[^_]+))?"
     r"(_clauth_(?P<clauth>[^_]+)_(?P<clca>[^_]+))?"
-    r"(?P<asyncencaps>_async_encaps)?"
+    r"(?P<options>_options_\([^\)]+\))?"
     r"_(?P<rtt>\d+\.\d+)ms_(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
 )
 
@@ -261,7 +261,7 @@ def get_experiment(filename):
         "root",
         "clauth",
         "clca",
-        "asyncencaps",
+        "options",
         "rtt",
         "drop_rate",
         "rate",
