@@ -32,7 +32,7 @@ SPEEDS = [1000, 10]
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
 ITERATIONS = 2
-POOL_SIZE = 40
+POOL_SIZE = 6
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
