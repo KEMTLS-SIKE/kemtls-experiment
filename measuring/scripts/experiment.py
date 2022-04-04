@@ -16,6 +16,15 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union, Literal
 import sys
 
+# Mininet simulation
+
+from mininet.topo import Topo
+from mininet.net import Mininet
+from mininet.node import CPULimitedHost
+from mininet.link import TCLink
+from mininet.util import irange
+from mininet.clean import Cleanup
+
 ###################################################################################################
 ## SETTTINGS ######################################################################################
 ###################################################################################################
@@ -23,16 +32,15 @@ import sys
 # Original set of latencies
 #LATENCIES = ['2.684ms', '15.458ms', '39.224ms', '97.73ms']
 #LATENCIES = ["2.0ms"]
-LATENCIES = ['15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
+LATENCIES = [15] # in ms #'15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
 LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
-NUM_PINGS = 10  # for measuring the practical latency
 #SPEEDS = [1000, 10]
 SPEEDS = [1000, 10]
 
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
 ITERATIONS = 2
-POOL_SIZE = 6
+POOL_SIZE = 2
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
@@ -40,14 +48,31 @@ MEASUREMENTS_PER_CLIENT = 500
 
 ###################################################################################################
 
+# Mininet topology
+class BenchmarkTopo( Topo ):
+    "Simple topology with latency."
+    def __init__(self, latency, loss, rate):
+        "Create custom topo."
+
+        # Initialize topology
+        Topo.__init__( self )
+
+        # Add hosts and switches
+        s = self.addSwitch( 's0' )
+
+        client = self.addHost('client')        
+        server = self.addHost('server')
+
+        # Add links
+        print(latency)
+        self.addLink(client, s, delay=str(latency)+"ms", bw=rate, loss=loss)
+        self.addLink(s, server)
 
 SCRIPTDIR = Path(sys.path[0]).resolve()
 sys.path.append(str(SCRIPTDIR.parent.parent / "mk-cert"))
 
 
 import algorithms
-
-hostname = "servername"
 
 #: UserID of the user so we don't end up with a bunch of root-owned files
 USERID = int(os.environ.get("SUDO_UID", 1001))
@@ -102,7 +127,7 @@ ALGORITHMS = [
     Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
     Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
     Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
-
+    Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
     # # EXPERIMENT - KEX - LEAF - INT - ROOT - CLIENT AUTH - CLIENT CA
@@ -241,43 +266,13 @@ def only_unique_experiments(algos: List[Experiment]) -> List[Experiment]:
 TIMER_REGEX = re.compile(r"(?P<label>[A-Z ]+): (?P<timing>\d+) ns")
 
 
-def run_subprocess(command, working_dir=".", expected_returncode=0) -> str:
-    result = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=working_dir,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == expected_returncode, f"Failed to run '{command}':\n{result.stdout}"
-    return result.stdout
-
-
-def change_qdisc(ns, dev, pkt_loss, delay, rate=1000) -> None:
-    if pkt_loss == 0:
-        command = [
-            "ip", "netns", "exec", ns, "tc", "qdisc", "change", "dev", dev,
-            "root", "netem", "limit", "1000", "delay", delay,
-            "rate", f"{rate}mbit",
-        ]
-    else:
-        command = [
-            "ip", "netns", "exec", ns, "tc", "qdisc", "change", "dev", dev,
-            "root", "netem", "limit", "1000", "loss", "{0}%".format(pkt_loss),
-            "delay", delay, "rate", f"{rate}mbit",
-        ]
-
-    logger.debug(" > " + " ".join(command))
-    run_subprocess(command)
-
-
 class ServerProcess(multiprocessing.Process):
-    def __init__(self, port, pipe, experiment: Experiment, cached_int=False):
+    def __init__(self, port, server_node, pipe, experiment: Experiment, cached_int=False):
         super().__init__(daemon=False)
         self.experiment = experiment
         self.path = get_experiment_path(experiment)
         self.port = port
+        self.server_node = server_node
         self.pipe = pipe
         self.last_msg = "HANDSHAKE COMPLETED"
         self.servername = "tlsserver"
@@ -298,7 +293,6 @@ class ServerProcess(multiprocessing.Process):
 
     def run(self):
         cmd = [
-            "ip", "netns", "exec", "srv_ns",
             f"./{self.servername}",
             "--certs", self.certname,
             "--key", self.keyname,
@@ -311,7 +305,7 @@ class ServerProcess(multiprocessing.Process):
             cmd.append("--async-encapsulation")
 
         logger.debug("Server cmd: %s", ' '.join(cmd))
-        self.server_process = subprocess.Popen(
+        self.server_process = self.server_node.popen(
             cmd,
             cwd=self.path,
             stdout=subprocess.PIPE,
@@ -359,13 +353,14 @@ class ServerProcess(multiprocessing.Process):
         try:
             self.server_process.wait(5)
         except subprocess.TimeoutExpired:
-            logger.exception("Timeout expired while waiting for server on {port} to terminate")
+            logger.exception("Timeout expired while waiting for server on {self.port} to terminate")
             self.server_process.kill()
 
 
-def run_measurement(output_queue, port, experiment: Experiment, cached_int):
+def run_measurement(output_queue, port, experiment: Experiment, cached_int, client_node, server_node):
+    logger.debug('starting server')
     (inpipe, outpipe) = multiprocessing.Pipe()
-    server = ServerProcess(port, inpipe, experiment, cached_int)
+    server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
     server.start()
     time.sleep(4)
 
@@ -396,9 +391,8 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
     if experiment.client_auth is not None:
         clientauthopts = ["--auth-certs", "client.crt", "--auth-key", "client.key"]
     while len(client_measurements) < MEASUREMENTS_PER_PROCESS and server.is_alive() and restarts < allowed_restarts:
-        logger.debug(f"Starting measurements on port {port}")
+        logger.debug(f"Starting measurements on {port}")
         cmd = [
-            "ip", "netns", "exec", "cli_ns",
             f"./{clientname}",
             "--cafile", caname,
             "--loops",
@@ -409,62 +403,84 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
             "--http",
             *cache_args,
             *clientauthopts,
-            hostname,
+            "servername",
         ]
         if OPTION_ASYNC_KEYPAIR in experiment.options:
             cmd.append(f"--async-keypair")
 
         logger.debug("Client cmd: %s", ' '.join(cmd))
         try:
-            proc_result = subprocess.run(
+            p = client_node.popen(
                 cmd,
-                text=True,
+                # text=True,
                 stdout=subprocess.PIPE,
-                timeout=10 * MEASUREMENTS_PER_CLIENT,
-                check=False,
+                # timeout= 1, #10 * MEASUREMENTS_PER_CLIENT,
+                # check=True,
                 cwd=path,
             )
+            logger.debug('starting client')
+            proc_result = p.communicate()
+            logger.debug('communication client')
+
         except subprocess.TimeoutExpired:
-            logger.exception("Sever has hung itself, restarting measurements")
+            logger.exception("Server has hung itself, restarting measurements")
             client_measurements.clear()
             server.terminate()
             server.kill()
             time.sleep(15)
             server.join(5)
-            server = ServerProcess(path, port, type, inpipe, cached_int)
+            server = ServerProcess(port, path, type, inpipe, cached_int)
             server.start()
             continue
 
         logger.debug(f"Completed measurements on port {port}")
         measurement = {}
-        for line in proc_result.stdout.split("\n"):
-            assert 'WebPKIError' not in line
-            result = TIMER_REGEX.match(line)
-            if result:
-                label = result.group("label")
-                measurement[label] = result.group("timing")
-                if label == LAST_MSG:
-                    client_measurements.append(measurement)
-                    measurement = {}
+
+        for recv in proc_result:
+            for line in recv.decode().split("\n"):
+                assert 'WebPKIError' not in line
+                result = TIMER_REGEX.match(line)
+                if result:
+                    label = result.group("label")
+                    measurement[label] = result.group("timing")
+                    if label == LAST_MSG:
+                        client_measurements.append(measurement)
+                        measurement = {}
+        logger.debug(f"Done outputs processing")
+
         restarts += 1
 
     logger.debug("Joining server")
     server.join(5)
+
 
     if not outpipe.poll(10):
         logger.error("No data available from server")
         sys.exit(1)
     (server_cmd, server_data) = outpipe.recv()
     if len(server_data) != len(client_measurements):
-        logger.error(f"Process on {port} out of sync {len(server_data)} != {len(client_measurements)}")
+        logger.error(f"Process on port {port} out of sync {len(server_data)} != {len(client_measurements)}")
         sys.exit(1)
 
     output_queue.put((' '.join(cmd), server_cmd, list(zip(server_data, client_measurements))))
 
 
-def experiment_run_timers(experiment: Experiment, cached_int: bool) -> Tuple[str, str, List[Dict[str, Any]]]:
+def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, delay, rate=1000) -> Tuple[str, str, List[Dict[str, Any]]]:
+    # Start Mininet
+    logger.debug('starting mininet')
+    topo = BenchmarkTopo(delay, pkt_loss, rate)
+    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
+    net.start()
+
+    # define the server's IP in /etc/hosts
+    client_node, server_node = net.get('client', 'server')
+    logger.debug("Add {} IP to client ".format(server_node.IP()))
+    client_node.cmd("echo '{} servername' >> /etc/hosts".format(server_node.IP()))
+
+    time.sleep(2)
+
     path = get_experiment_path(experiment)
-    tasks = [(port, experiment, cached_int) for port in SERVER_PORTS]
+    tasks = [(port, experiment, cached_int, client_node, server_node) for port in SERVER_PORTS]
     output_queue = multiprocessing.Queue()
     processes = [
         multiprocessing.Process(target=run_measurement, args=(output_queue, *args))
@@ -483,6 +499,9 @@ def experiment_run_timers(experiment: Experiment, cached_int: bool) -> Tuple[str
     logger.debug(f"Joining processes on {rpath} for {experiment}")
     for process in processes:
         process.join(5)
+    
+    net.stop()
+    Cleanup.cleanup()
 
     flattened = (results[0][0], results[0][1], [])
     for _, _, measurements in results:
@@ -490,25 +509,6 @@ def experiment_run_timers(experiment: Experiment, cached_int: bool) -> Tuple[str
 
     return flattened
 
-
-def get_rtt_ms():
-    logger.info("Pinging")
-    command = [
-        "ip",
-        "netns",
-        "exec",
-        "cli_ns",
-        "ping",
-        hostname,
-        "-c",
-        str(NUM_PINGS),
-    ]
-
-    logger.debug(" > " + " ".join(command))
-    result = run_subprocess(command)
-
-    result_fmt = result.splitlines()[-1].split("/")
-    return result_fmt[4]
 
 
 def write_result(outfile: io.TextIOBase, outlog: io.TextIOBase, results: Tuple[str, str, List[Any]]):
@@ -531,15 +531,6 @@ def write_result(outfile: io.TextIOBase, outlog: io.TextIOBase, results: Tuple[s
 
     outlog.write(f"client: {client_cmd}\n")
     outlog.write(f"server: {server_cmd}\n")
-
-
-
-def reverse_resolve_hostname() -> str:
-    try:
-        return socket.gethostbyaddr("10.99.0.1")[0]
-    except:
-        logger.exception("You probably need to set up '10.99.0.1' in servername in /etc/hosts")
-        raise
 
 
 def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate, ext="csv") -> Path:
@@ -629,11 +620,6 @@ def main():
         os.chown(dirname, uid=1001, gid=1001)
 
     for latency_ms in LATENCIES:
-        # To get actual (emulated) RTT
-        change_qdisc("cli_ns", "cli_ve", 0, delay=latency_ms)
-        change_qdisc("srv_ns", "srv_ve", 0, delay=latency_ms)
-        rtt_ms = get_rtt_ms()
-
         for (experiment, int_only, pkt_loss) in itertools.product(ALGORITHMS, [True, False], LOSS_RATES):
             if latency_ms == LATENCIES[0]:
                 rate = 1000
@@ -650,20 +636,18 @@ def main():
                 (f"{root} " if not int_only else "") +
                 (f"("+(",".join(options))+") " if len(options) != 0 else "") +
                 (f"(client auth: {client_auth} signed by {client_ca}) " if client_auth is not None else "") +
-                f"for {rtt_ms}ms latency with "
+                f"for {latency_ms}ms latency with "
                 f"{'intermediate only' if int_only else 'full cert chain'} "
                 f"and {pkt_loss}% loss on {rate}mbit"
             )
 
-            change_qdisc("cli_ns", "cli_ve", pkt_loss, delay=latency_ms, rate=rate)
-            change_qdisc("srv_ns", "srv_ve", pkt_loss, delay=latency_ms, rate=rate)
             result = []
             fngetter = partial(get_filename,
-                experiment, int_only, rtt_ms, pkt_loss, rate,
+                experiment, int_only, latency_ms, pkt_loss, rate,
             )
             start_time = datetime.datetime.utcnow()
             for _ in range(ITERATIONS):
-                result += experiment_run_timers(experiment, int_only)
+                result += experiment_run_timers(experiment, int_only, pkt_loss, delay=latency_ms, rate=rate)
             duration = datetime.datetime.utcnow() - start_time
             logger.info("took %s", duration)
 
@@ -712,5 +696,4 @@ if __name__ == "__main__":
     logger.info("Sign-cached experiments: {}".format(sum(1 for alg in ALGORITHMS if alg[0] == "sign-cached")))
 
     setup_experiments()
-    hostname = reverse_resolve_hostname()
     main()

@@ -237,7 +237,7 @@ EXPERIMENT_REGEX = re.compile(
     r"(?P<kex>[^_]+)_(?P<leaf>[^_]+)_(?P<int>[^_]+)(_(?P<root>[^_]+))?"
     r"(_clauth_(?P<clauth>[^_]+)_(?P<clca>[^_]+))?"
     r"(?P<options>_options_\([^\)]+\))?"
-    r"_(?P<rtt>\d+\.\d+)ms_(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
+    r"_(?P<rtt>\d+(\.\d+)?)ms_(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
 )
 
 
