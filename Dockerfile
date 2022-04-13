@@ -62,11 +62,6 @@ RUN cargo build --release
 WORKDIR /usr/src/pqtls/mk-cert/signutil
 RUN cargo build --release --examples
 
-# pre-Compile tlsserver and tlsclient examples
-WORKDIR /usr/src/pqtls/rustls/rustls-mio/
-RUN cargo build --release --example tlsserver && \
-    cargo build --release --example tlsclient
-
 # These must exactly match what is listed in the options of mk-cert/encoder.py
 # (and those follow from liboqs)
 ARG KEX_ALG="Kyber512"
@@ -76,7 +71,10 @@ ENV KEX_ALG     $KEX_ALG
 # Update the KEX alg
 RUN sed -i 's@NamedGroup::[[:alnum:]]\+@NamedGroup::'${KEX_ALG}'@' /usr/src/pqtls/rustls/rustls/src/client/default_group.rs
 
+
 # Compile tlsserver and tlsclient examples
+COPY rustls-mio  /usr/src/pqtls/rustls-mio
+WORKDIR /usr/src/pqtls/rustls-mio/
 RUN cargo build --release --example tlsserver && \
     cargo build --release --example tlsclient
 
@@ -105,8 +103,8 @@ RUN apt-get update -qq \
  && apt-get install -qq -y libssl1.1 \
  && rm -rf /var/cache/apt
 
-COPY --from=builder /usr/src/pqtls/rustls/target/release/examples/tlsserver /usr/local/bin/tlsserver
-COPY --from=builder /usr/src/pqtls/rustls/target/release/examples/tlsclient /usr/local/bin/tlsclient
+COPY --from=builder /usr/src/pqtls/rustls-mio/target/release/examples/tlsserver /usr/local/bin/tlsserver
+COPY --from=builder /usr/src/pqtls/rustls-mio/target/release/examples/tlsclient /usr/local/bin/tlsclient
 COPY --from=builder /usr/src/pqtls/mk-cert/*.crt /certs/
 COPY --from=builder /usr/src/pqtls/mk-cert/*.key /certs/
 COPY --from=builder /usr/src/pqtls/mk-cert/*.pub /certs/

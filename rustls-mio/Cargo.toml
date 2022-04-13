@@ -1,0 +1,51 @@
+[package]
+name = "rustls-mio"
+version = "0.0.1"
+edition = "2018"
+authors = ["Joseph Birr-Pixton <jpixton@gmail.com>"]
+license = "Apache-2.0/ISC/MIT"
+description = "Rustls example code and tests that depend on mio."
+publish = false
+
+[features]
+default = ["logging"]
+logging = ["log"]
+dangerous_configuration = ["rustls/dangerous_configuration"]
+quic = ["rustls/quic"]
+
+[dependencies]
+log = { version = "0.4.4", optional = true }
+rustls = { version = "0.19", features = ["quic"] }
+sct = "0.6"
+webpki = "0.21.0"
+quinn = "0.7.0"
+futures = "0.3.8"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.2.5", default-features = false, features = ["env-filter", "fmt", "ansi", "chrono"]}
+tracing-futures = { version = "0.2.0", default-features = false, features = ["std-future"] }
+tokio = { version = "1.0.1", features = ["rt", "time", "macros"] }
+anyhow = "1.0.22"
+ct-logs = "0.7"
+docopt = "~1.1"
+env_logger = "0.8.2"
+mio = { version = "0.7", features = ["os-poll", "tcp"] }
+regex = "1.0"
+serde = "1.0"
+serde_derive = "1.0"
+webpki-roots = "0.20"
+ring = "0.16.0"
+ctrlc = {version = "3.1.7", features = ["termination"] }
+
+[[example]]
+name = "tlsclient"
+path = "examples/tlsclient.rs"
+
+[[example]]
+name = "tlsserver"
+path = "examples/tlsserver.rs"
+
+[patch.crates-io]
+#webpki = { version = "0.21.9999", git = "https://github.com/thomwiggers/webpki.git", branch = "pq-take2" }
+webpki = { path = "../webpki" }
+rustls = { path = "../rustls/rustls" }

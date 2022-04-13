@@ -106,6 +106,7 @@ AVG_FIELDS = [
     "clauth",
     "clca",
     "options",
+    "protocol",
     "int-only",
     "rtt",
     "drop_rate",
@@ -197,7 +198,8 @@ def format_results_tex(avgs):
         texfile.write(macro("clientdone", avgs["client handshake completed"]))
         texfile.write(macro("serverdone", avgs["server handshake completed"]))
         texfile.write(macro("serverexplicitauthed", avgs["client authenticated server"]))
-        texfile.write(macro("clientgotreply", avgs["client received server reply"]))
+        if "client received server reply" in avgs: # does not exist with quic
+            texfile.write(macro("clientgotreply", avgs["client received server reply"]))
 
 
 def process_experiment(experiment):
@@ -226,7 +228,8 @@ def write_averages(experiments):
             assert (name, avgs["rtt"]) not in names, f"Already seen {name}"
             names.add(name)
             
-            print(f"{name}: Server reply: {avgs['client received server reply']}")
+            if 'client received server reply' in avgs: # does not exist in quic
+                print(f"{name}: Server reply: {avgs['client received server reply']}")
             print(f"{name}: Server done: {avgs['server handshake completed']}")
             writer.writerow(avgs)
             format_results_tex(avgs)
@@ -237,7 +240,7 @@ EXPERIMENT_REGEX = re.compile(
     r"(?P<kex>[^_]+)_(?P<leaf>[^_]+)_(?P<int>[^_]+)(_(?P<root>[^_]+))?"
     r"(_clauth_(?P<clauth>[^_]+)_(?P<clca>[^_]+))?"
     r"(?P<options>_options_\([^\)]+\))?"
-    r"_(?P<rtt>\d+(\.\d+)?)ms_(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
+    r"_(?P<rtt>\d+(\.\d+)?)ms_((?P<protocol>quic)_)?(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
 )
 
 
@@ -262,6 +265,7 @@ def get_experiment(filename):
         "clauth",
         "clca",
         "options",
+        "protocol",
         "rtt",
         "drop_rate",
         "rate",

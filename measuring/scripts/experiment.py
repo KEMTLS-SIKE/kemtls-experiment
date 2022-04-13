@@ -40,7 +40,7 @@ SPEEDS = [1000, 10]
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
 ITERATIONS = 2
-POOL_SIZE = 2
+POOL_SIZE = 1
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
@@ -64,7 +64,6 @@ class BenchmarkTopo( Topo ):
         server = self.addHost('server')
 
         # Add links
-        print(latency)
         self.addLink(client, s, delay=str(latency)+"ms", bw=rate, loss=loss)
         self.addLink(s, server)
 
@@ -111,6 +110,8 @@ class CustomFormatter(logging.Formatter):
 OPTION_ASYNC_ENCAPS = "async_encaps"
 OPTION_ASYNC_KEYPAIR = "async_keypair"
 
+QUIC = "quic"
+
 class Experiment(NamedTuple):
     """Represents an experiment"""
     type: Union[Literal["sign"], Literal["pdk"], Literal["kemtls"], Literal["sign-cached"]]
@@ -121,13 +122,19 @@ class Experiment(NamedTuple):
     client_auth: Optional[str] = None
     client_ca: Optional[str] = None
     options: List[str] = []
+    protocol: List[str] = "tls"
 
 ALGORITHMS = [
     #  PQ Signed KEX
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
-    Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+    # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
+    # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
     # # EXPERIMENT - KEX - LEAF - INT - ROOT - CLIENT AUTH - CLIENT CA
@@ -245,7 +252,7 @@ ALGORITHMS = [
 def __validate_experiments() -> None:
     known_kems = [kem[0].upper() for kem in algorithms.kems] + ["X25519"]
     known_sigs = [sig[1] for sig in algorithms.signs] + ["RSA2048"]
-    for (_, kex, leaf, int, root, client_auth, client_ca, _) in ALGORITHMS:
+    for (_, kex, leaf, int, root, client_auth, client_ca, _, protocol) in ALGORITHMS:
         assert kex in known_kems, f"{kex} is not a known KEM"
         assert leaf in known_kems or leaf in known_sigs, f"{leaf} is not a known algorithm"
         assert int is None or int in known_sigs, f"{int} is not a known signature algorithm"
@@ -253,6 +260,8 @@ def __validate_experiments() -> None:
         assert client_auth is None or client_auth in known_sigs or client_auth in known_kems, \
             f"{client_auth} is not a known signature algorith or KEM"
         assert client_ca is None or client_ca in known_sigs, f"{client_ca} is not a known sigalg"
+        assert protocol in ["tls", QUIC], f"{protocol} is not a known protocol"
+
 __validate_experiments()
 
 def only_unique_experiments(algos: List[Experiment]) -> List[Experiment]:
@@ -303,6 +312,8 @@ class ServerProcess(multiprocessing.Process):
 
         if OPTION_ASYNC_ENCAPS in self.experiment.options:
             cmd.append("--async-encapsulation")
+        if self.experiment.protocol == QUIC:
+            cmd.append("--quic")
 
         logger.debug("Server cmd: %s", ' '.join(cmd))
         self.server_process = self.server_node.popen(
@@ -358,112 +369,127 @@ class ServerProcess(multiprocessing.Process):
 
 
 def run_measurement(output_queue, port, experiment: Experiment, cached_int, client_node, server_node):
-    logger.debug('starting server')
-    (inpipe, outpipe) = multiprocessing.Pipe()
-    server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
-    server.start()
-    time.sleep(4)
+    try:
+        logger.debug('starting server')
+        (inpipe, outpipe) = multiprocessing.Pipe()
+        server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
+        server.start()
+        time.sleep(4)
 
-    path = get_experiment_path(experiment)
-    clientname = "tlsclient"
-    LAST_MSG = "RECEIVED SERVER REPLY"
-    type = experiment.type
-    if type == "sign" or type == "sign-cached":
-        caname = "signing" + ("-int" if cached_int else "-ca") + ".crt"
-    elif type == "kemtls" or type == "pdk":
-        caname = "kem" + ("-int" if cached_int else "-ca") + ".crt"
-    else:
-        logger.error("Unknown experiment type=%s", type)
-        sys.exit(1)
-
-    client_measurements = []
-    restarts = 0
-    allowed_restarts = 2 * MEASUREMENTS_PER_PROCESS / MEASUREMENTS_PER_CLIENT
-    cache_args = []
-    if type == "pdk":
-        cache_args = ["--cached-certs", "kem.crt"]
-    elif type == "sign-cached":
-        if not cached_int:
-            cache_args = ["--cached-certs", "signing.all.crt"]
+        path = get_experiment_path(experiment)
+        clientname = "tlsclient"
+        if experiment.protocol == QUIC:
+            LAST_MSG = "HANDSHAKE COMPLETED" # Rustls does not transmis application data during the quic handshake
         else:
-            cache_args = ["--cached-certs", "signing.chain.crt"]
-    clientauthopts = []
-    if experiment.client_auth is not None:
-        clientauthopts = ["--auth-certs", "client.crt", "--auth-key", "client.key"]
-    while len(client_measurements) < MEASUREMENTS_PER_PROCESS and server.is_alive() and restarts < allowed_restarts:
-        logger.debug(f"Starting measurements on {port}")
-        cmd = [
-            f"./{clientname}",
-            "--cafile", caname,
-            "--loops",
-            str(min(MEASUREMENTS_PER_PROCESS - len(client_measurements),
-                    MEASUREMENTS_PER_CLIENT)),
-            "--port", port,
-            "--no-tickets",
-            "--http",
-            *cache_args,
-            *clientauthopts,
-            "servername",
-        ]
-        if OPTION_ASYNC_KEYPAIR in experiment.options:
-            cmd.append(f"--async-keypair")
+            LAST_MSG = "RECEIVED SERVER REPLY"
+        type = experiment.type
+        if type == "sign" or type == "sign-cached":
+            caname = "signing" + ("-int" if cached_int else "-ca") + ".crt"
+        elif type == "kemtls" or type == "pdk":
+            caname = "kem" + ("-int" if cached_int else "-ca") + ".crt"
+        else:
+            logger.error("Unknown experiment type=%s", type)
+            sys.exit(1)
 
-        logger.debug("Client cmd: %s", ' '.join(cmd))
-        try:
-            p = client_node.popen(
-                cmd,
-                # text=True,
-                stdout=subprocess.PIPE,
-                # timeout= 1, #10 * MEASUREMENTS_PER_CLIENT,
-                # check=True,
-                cwd=path,
-            )
-            logger.debug('starting client')
-            proc_result = p.communicate()
-            logger.debug('communication client')
+        client_measurements = []
+        restarts = 0
+        allowed_restarts = 2 * MEASUREMENTS_PER_PROCESS / MEASUREMENTS_PER_CLIENT
+        cache_args = []
+        if type == "pdk":
+            cache_args = ["--cached-certs", "kem.crt"]
+        elif type == "sign-cached":
+            if not cached_int:
+                cache_args = ["--cached-certs", "signing.all.crt"]
+            else:
+                cache_args = ["--cached-certs", "signing.chain.crt"]
+        clientauthopts = []
+        if experiment.client_auth is not None:
+            clientauthopts = ["--auth-certs", "client.crt", "--auth-key", "client.key"]
+        while len(client_measurements) < MEASUREMENTS_PER_PROCESS and server.is_alive() and restarts < allowed_restarts:
+            logger.debug(f"Starting measurements on {port}")
+            cmd = [
+                f"./{clientname}",
+                "--cafile", caname,
+                "--loops",
+                str(min(MEASUREMENTS_PER_PROCESS - len(client_measurements),
+                        MEASUREMENTS_PER_CLIENT)),
+                "--port", port,
+                "--no-tickets",
+                "--http",
+                *cache_args,
+                *clientauthopts,
+                "servername",
+            ]
+            if OPTION_ASYNC_KEYPAIR in experiment.options:
+                cmd.append(f"--async-keypair")
+            if experiment.protocol == QUIC:
+                cmd.append("--quic")
 
-        except subprocess.TimeoutExpired:
-            logger.exception("Server has hung itself, restarting measurements")
-            client_measurements.clear()
-            server.terminate()
-            server.kill()
-            time.sleep(15)
-            server.join(5)
-            server = ServerProcess(port, path, type, inpipe, cached_int)
-            server.start()
-            continue
+            logger.debug("Client cmd: %s", ' '.join(cmd))
+            try:
+                p = client_node.popen(
+                    cmd,
+                    # text=True,
+                    stdout=subprocess.PIPE,
+                    # timeout= 1, #10 * MEASUREMENTS_PER_CLIENT,
+                    # check=True,
+                    cwd=path,
+                )
+                logger.debug('starting client')
+                proc_result = p.communicate()
+                logger.debug('communication client')
 
-        logger.debug(f"Completed measurements on port {port}")
-        measurement = {}
+            except subprocess.TimeoutExpired:
+                logger.exception("Server has hung itself, restarting measurements")
+                client_measurements.clear()
+                server.terminate()
+                server.kill()
+                time.sleep(15)
+                server.join(5)
+                server = ServerProcess(port, path, type, inpipe, cached_int)
+                server.start()
+                continue
 
-        for recv in proc_result:
-            for line in recv.decode().split("\n"):
-                assert 'WebPKIError' not in line
-                result = TIMER_REGEX.match(line)
-                if result:
-                    label = result.group("label")
-                    measurement[label] = result.group("timing")
-                    if label == LAST_MSG:
-                        client_measurements.append(measurement)
-                        measurement = {}
-        logger.debug(f"Done outputs processing")
+            logger.debug(f"Completed measurements on port {port}")
+            measurement = {}
 
-        restarts += 1
+            for recv in proc_result:
+                for line in recv.decode().split("\n"):
+                    assert 'WebPKIError' not in line
+                    result = TIMER_REGEX.match(line)
+                    if result:
+                        label = result.group("label")
+                        measurement[label] = result.group("timing")
+                        if label == LAST_MSG:
+                            client_measurements.append(measurement)
+                            measurement = {}
+            # print(proc_result)
+            logger.debug(f"Done outputs processing")
 
-    logger.debug("Joining server")
-    server.join(5)
+            restarts += 1
+
+        logger.debug("Joining server")
+        server.join(5)
 
 
-    if not outpipe.poll(10):
-        logger.error("No data available from server")
-        sys.exit(1)
-    (server_cmd, server_data) = outpipe.recv()
-    if len(server_data) != len(client_measurements):
-        logger.error(f"Process on port {port} out of sync {len(server_data)} != {len(client_measurements)}")
-        sys.exit(1)
+        if not outpipe.poll(10):
+            logger.error("No data available from server")
+            sys.exit(1)
+        (server_cmd, server_data) = outpipe.recv()
+        if len(server_data) != len(client_measurements):
+            # print(server_data)
+            # print(proc_result)
+            logger.error(f"Process on port {port} out of sync {len(server_data)} != {len(client_measurements)}")
+            sys.exit(1)
 
-    output_queue.put((' '.join(cmd), server_cmd, list(zip(server_data, client_measurements))))
+        output_queue.put((' '.join(cmd), server_cmd, list(zip(server_data, client_measurements))))
+    except:
+        # Print exceptions that would otherwise be silently ignored
+        print("An error happened...")
 
+        import traceback
+        traceback.print_exc()
+        exit(1)
 
 def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, delay, rate=1000) -> Tuple[str, str, List[Dict[str, Any]]]:
     # Start Mininet
@@ -542,6 +568,8 @@ def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate,
     if experiment.client_auth is not None:
         fileprefix += f"_clauth_{experiment.client_auth}_{experiment.client_ca}"
     fileprefix += f"_{rtt_ms}ms"
+    if experiment.protocol == QUIC:
+        fileprefix += "_quic"
     caching_type = "int-chain" if not int_only else "int-only"
     filename = SCRIPTDIR.parent / "data" / f"{experiment.type}-{caching_type}" / f"{fileprefix}_{pkt_loss}_{rate}mbit.{ext}"
     return filename
@@ -625,13 +653,13 @@ def main():
                 rate = 1000
             else:
                 rate = 10
-            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca, options) = experiment
+            (type, kex_alg, leaf, intermediate, root, client_auth, client_ca, options, protocol) = experiment
             if type in ("pdk", "sign-cached") and not int_only:
                 # Skip PDK variants like KKDD, they don't make sense as the cert isn't sent.
                 continue
             experiment = get_experiment_instantiation(experiment)
             logger.info(
-                f"Experiment for {type} {kex_alg} {leaf} " +
+                f"Experiment on {protocol} for {type} {kex_alg} {leaf} " +
                 (f"{intermediate} " if intermediate is not None else "") +
                 (f"{root} " if not int_only else "") +
                 (f"("+(",".join(options))+") " if len(options) != 0 else "") +
