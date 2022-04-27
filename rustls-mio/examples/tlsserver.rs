@@ -15,7 +15,6 @@ use std::net;
 
 use anyhow::{anyhow, Result};
 use futures::{StreamExt, TryFutureExt};
-use futures::executor;
 
 #[macro_use]
 extern crate serde_derive;
@@ -732,12 +731,18 @@ async fn run() -> Result<()> {
         let (endpoint, mut incoming) = endpoint.bind(&addr)?;
         eprintln!("listening on {}", endpoint.local_addr()?);
 
-        while let Some(conn) = executor::block_on(incoming.next()) {
-            info!("connection incoming");
-        
-            handle_connection(conn).unwrap_or_else(move |e| {
-                error!("connection failed: {reason}", reason = e.to_string())
-            }).await;
+        while true {
+            if let Ok(Some(conn)) = tokio::time::timeout(std::time::Duration::from_secs(1), incoming.next()).await {
+                info!("connection incoming");
+            
+                handle_connection(conn).unwrap_or_else(move |e| {
+                    error!("connection failed: {reason}", reason = e.to_string())
+                }).await;
+            }
+
+            if should_stop.load(Ordering::Relaxed) {
+                break;
+            }
         }
     } else {
         // TLS
