@@ -34,8 +34,6 @@ from mininet.clean import Cleanup
 #LATENCIES = ["2.0ms"]
 LATENCIES = [15] # in ms #'15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
 LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
-#SPEEDS = [1000, 10]
-SPEEDS = [1000, 10]
 
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
@@ -43,8 +41,8 @@ ITERATIONS = 2
 POOL_SIZE = 1
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
-MEASUREMENTS_PER_PROCESS = 500
-MEASUREMENTS_PER_CLIENT = 500
+MEASUREMENTS_PER_PROCESS = 50
+MEASUREMENTS_PER_CLIENT = 50
 
 ###################################################################################################
 
@@ -126,6 +124,11 @@ class Experiment(NamedTuple):
 
 ALGORITHMS = [
     #  PQ Signed KEX
+
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
