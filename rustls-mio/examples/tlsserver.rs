@@ -451,6 +451,7 @@ Options:
     --proto PROTOCOL        Negotiate PROTOCOL using ALPN.
                             May be used multiple times.
     --async-encapsulation   Activate async encapsulation optimization.
+    --split-encapsulation   Activate split encapsulation optimization.
     --quic                  Use Quic instead of TLS.
     --verbose               Emit log output.
     --version, -v           Show tool version.
@@ -475,6 +476,7 @@ struct Args {
     flag_resumption: bool,
     flag_tickets: bool,
     flag_async_encapsulation: bool,
+    flag_split_encapsulation: bool,
     flag_quic: bool,
     arg_fport: Option<u16>,
 }
@@ -610,6 +612,7 @@ fn make_config(args: &Args, config: &mut rustls::ServerConfig) {
     );
 
     config.async_encapsulation = args.flag_async_encapsulation;
+    config.split_encapsulation = args.flag_split_encapsulation;
 
     if args.flag_quic {
         config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();

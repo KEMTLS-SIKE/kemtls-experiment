@@ -105,6 +105,7 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
 
+OPTION_SPLIT_ENCAPS = "split_encaps"
 OPTION_ASYNC_ENCAPS = "async_encaps"
 OPTION_ASYNC_KEYPAIR = "async_keypair"
 
@@ -124,17 +125,17 @@ class Experiment(NamedTuple):
 
 ALGORITHMS = [
     #  PQ Signed KEX
-
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
     Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
     Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
 
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
-    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
+    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
 
@@ -269,11 +270,14 @@ __validate_experiments()
 
 def only_unique_experiments(algos: List[Experiment]) -> List[Experiment]:
     """get unique experiments: one of each type"""
+    def hash_experiment(exp: Experiment):
+        return (exp.type, exp.kex, exp.leaf, exp.intermediate, exp.root, exp.client_auth is None, ",".join(exp.options), exp.protocol)
+
     seen = set()
     def update(exp: Experiment) -> Experiment:
-        seen.add((exp.type, exp.client_auth is None, ",".join(exp.options)))
+        seen.add(hash_experiment(exp))
         return exp
-    return [update(exp) for exp in algos if (exp.type, exp.client_auth is None, ",".join(exp.options)) not in seen]
+    return [update(exp) for exp in algos if hash_experiment(exp) not in seen]
 
 TIMER_REGEX = re.compile(r"(?P<label>[A-Z ]+): (?P<timing>\d+) ns")
 
@@ -313,6 +317,8 @@ class ServerProcess(multiprocessing.Process):
             "http",
         ]
 
+        if OPTION_SPLIT_ENCAPS in self.experiment.options:
+            cmd.append("--split-encapsulation")
         if OPTION_ASYNC_ENCAPS in self.experiment.options:
             cmd.append("--async-encapsulation")
         if self.experiment.protocol == QUIC:
