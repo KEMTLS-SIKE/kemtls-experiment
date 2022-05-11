@@ -58,7 +58,7 @@ class BenchmarkTopo( Topo ):
         # Add hosts and switches
         s = self.addSwitch( 's0' )
 
-        client = self.addHost('client')        
+        client = self.addHost('client')
         server = self.addHost('server')
 
         # Add links
@@ -125,19 +125,24 @@ class Experiment(NamedTuple):
 
 ALGORITHMS = [
     #  PQ Signed KEX
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
     # Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
 
-    # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR]),
-    Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS]),
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
     # Experiment('sign', "SIKEP434COMPRESSED", "Falcon512", "XMSS", "RainbowICircumzenithal", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
-    # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal", protocol=QUIC),
+
+    # Only crypto
+    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
+
+    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+
+    Experiment('sign', "KYBER512", "RSA2048", "RSA2048", "RSA2048"),
 
     
     # # Need to specify leaf always as sigalg to construct correct binary directory

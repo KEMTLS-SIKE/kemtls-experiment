@@ -27,6 +27,7 @@ use webpki;
 use webpki_roots;
 
 use rustls::Session;
+use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm};
 
 const CLIENT: mio::Token = mio::Token(0);
 
@@ -498,7 +499,7 @@ fn apply_dangerous_options(args: &Args, _: &mut rustls::ClientConfig) {
 }
 
 /// Build a `ClientConfig` from our arguments
-fn make_config(args: &Args, config: &mut rustls::ClientConfig) {
+fn make_config(args: &Args, config: &mut rustls::ClientConfig) -> Result<()> {
     config.key_log = Arc::new(rustls::KeyLogFile::new());
 
     if !args.flag_suite.is_empty() {
@@ -565,9 +566,24 @@ fn make_config(args: &Args, config: &mut rustls::ClientConfig) {
 
     config.async_keypair = args.flag_async_keypair;
 
+    // Pre-compute the batch of keys, so that the first call doesn't count in the benchmark
+    if config.async_keypair {
+        let alg = KeyExchange::named_group_to_ecdh_alg(DEFAULT_GROUP).ok_or(anyhow!("failed to init kem"))?;
+        match alg {
+            KexAlgorithm::KEM(kem) => {
+                kem.init()?;
+            },
+            _ => {
+                panic!("Tried to use async keypair on a Ring Algorithm")
+            }
+        };
+    }
+
     if args.flag_quic {
         config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
     }
+    
+    Ok(())
 }
 
 /// Parse some arguments, then make a TLS client connection
@@ -605,7 +621,7 @@ async fn main() -> Result<()> {
         // Get a mutable reference to the 'crypto' config in the 'client config'.
         let tls_cfg: &mut rustls::ClientConfig =
             std::sync::Arc::get_mut(&mut cfg.crypto).unwrap();
-        make_config(&args, tls_cfg);
+        make_config(&args, tls_cfg)?;
 
         for i in 0..num_loops {
             println!("Connecting to server for iteration {} of {}", i, num_loops);

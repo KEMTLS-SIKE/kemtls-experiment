@@ -29,6 +29,7 @@ use rustls::{
     AllowAnyAnonymousOrAuthenticatedClient, AllowAnyAuthenticatedClient, NoClientAuth,
     RootCertStore, Session,
 };
+use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm};
 
 // Token for our listening socket.
 const LISTENER: mio::Token = mio::Token(0);
@@ -569,7 +570,7 @@ fn load_ocsp(filename: &Option<String>) -> Vec<u8> {
     ret
 }
 
-fn make_config(args: &Args, config: &mut rustls::ServerConfig) {
+fn make_config(args: &Args, config: &mut rustls::ServerConfig) -> Result<()> {
     config.key_log = Arc::new(rustls::KeyLogFile::new());
 
     let certs = load_certs(
@@ -614,9 +615,24 @@ fn make_config(args: &Args, config: &mut rustls::ServerConfig) {
     config.async_encapsulation = args.flag_async_encapsulation;
     config.split_encapsulation = args.flag_split_encapsulation;
 
+    // Pre-compute the batch of keys, so that the first call doesn't count in the benchmark
+    if config.async_encapsulation || config.split_encapsulation {
+        let alg = KeyExchange::named_group_to_ecdh_alg(DEFAULT_GROUP).ok_or(anyhow!("failed to init kem"))?;
+        match alg {
+            KexAlgorithm::KEM(kem) => {
+                kem.init()?;
+            },
+            _ => {
+                panic!("Tried to use async keypair on a Ring Algorithm")
+            }
+        };
+    }
+
     if args.flag_quic {
         config.alpn_protocols = ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
     }
+
+    Ok(())
 }
 
 
@@ -726,7 +742,7 @@ async fn run() -> Result<()> {
         // Get a mutable reference to the 'crypto' config in the 'client config'.
         let tls_cfg: &mut rustls::ServerConfig =
             std::sync::Arc::get_mut(&mut cfg.crypto).unwrap();
-        make_config(&args, tls_cfg);
+        make_config(&args, tls_cfg)?;
 
         let mut endpoint = quinn::Endpoint::builder();
         endpoint.listen(cfg);
@@ -767,7 +783,7 @@ async fn run() -> Result<()> {
 
         let mut config = rustls::ServerConfig::new(client_auth);
 
-        make_config(&args, &mut config);
+        make_config(&args, &mut config)?;
 
         let config = Arc::new(config);
 
