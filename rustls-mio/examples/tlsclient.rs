@@ -27,7 +27,7 @@ use webpki;
 use webpki_roots;
 
 use rustls::Session;
-use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm};
+use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm,sike_deinit};
 
 const CLIENT: mio::Token = mio::Token(0);
 
@@ -655,7 +655,6 @@ async fn main() -> Result<()> {
 
             // Give the server a fair chance to receive the close packet
             executor::block_on(endpoint.wait_idle());
-
         }
     } else {
         let mut config = rustls::ClientConfig::new();
@@ -694,5 +693,7 @@ async fn main() -> Result<()> {
             }
         }
     }
+
+    sike_deinit();
     Ok(())
 }

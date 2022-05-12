@@ -24,12 +24,11 @@ use docopt::Docopt;
 use env_logger;
 
 use rustls;
-
 use rustls::{
     AllowAnyAnonymousOrAuthenticatedClient, AllowAnyAuthenticatedClient, NoClientAuth,
     RootCertStore, Session,
 };
-use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm};
+use rustls::internal::kems::{DEFAULT_GROUP,KeyExchange,KexAlgorithm,sike_deinit};
 
 // Token for our listening socket.
 const LISTENER: mio::Token = mio::Token(0);
@@ -750,7 +749,7 @@ async fn run() -> Result<()> {
         let (endpoint, mut incoming) = endpoint.bind(&addr)?;
         eprintln!("listening on {}", endpoint.local_addr()?);
 
-        while true {
+        loop {
             if let Ok(Some(conn)) = tokio::time::timeout(std::time::Duration::from_secs(1), incoming.next()).await {
                 info!("connection incoming");
             
@@ -834,5 +833,6 @@ async fn run() -> Result<()> {
         }
     }
 
+    sike_deinit();
     return Ok(())
 }

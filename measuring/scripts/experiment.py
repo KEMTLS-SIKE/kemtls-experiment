@@ -41,8 +41,8 @@ ITERATIONS = 2
 POOL_SIZE = 1
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
-MEASUREMENTS_PER_PROCESS = 50
-MEASUREMENTS_PER_CLIENT = 50
+MEASUREMENTS_PER_PROCESS = 500
+MEASUREMENTS_PER_CLIENT = 500
 
 ###################################################################################################
 
@@ -135,14 +135,14 @@ ALGORITHMS = [
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
 
     # Only crypto
-    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
-    # Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
 
     Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR], protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=QUIC),
+    # Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
 
-    Experiment('sign', "KYBER512", "RSA2048", "RSA2048", "RSA2048"),
+    Experiment('sign', "KYBER512", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
 
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
@@ -440,27 +440,29 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
                 cmd.append("--quic")
 
             logger.debug("Client cmd: %s", ' '.join(cmd))
+            p = client_node.popen(
+                cmd,
+                # text=True,
+                stdout=subprocess.PIPE,
+                # check=True,z
+                cwd=path,
+            )
             try:
-                p = client_node.popen(
-                    cmd,
-                    # text=True,
-                    stdout=subprocess.PIPE,
-                    # timeout= 1, #10 * MEASUREMENTS_PER_CLIENT,
-                    # check=True,
-                    cwd=path,
-                )
                 logger.debug('starting client')
-                proc_result = p.communicate()
+                proc_result = p.communicate(timeout=10 * MEASUREMENTS_PER_CLIENT)
                 logger.debug('communication client')
 
             except subprocess.TimeoutExpired:
                 logger.exception("Server has hung itself, restarting measurements")
+                p.kill()
+                logger.exception("client {}", p.communicate())
+
                 client_measurements.clear()
                 server.terminate()
                 server.kill()
                 time.sleep(15)
                 server.join(5)
-                server = ServerProcess(port, path, type, inpipe, cached_int)
+                server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
                 server.start()
                 continue
 
@@ -477,7 +479,6 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
                         if label == LAST_MSG:
                             client_measurements.append(measurement)
                             measurement = {}
-            # print(proc_result)
             logger.debug(f"Done outputs processing")
 
             restarts += 1
@@ -491,8 +492,6 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
             sys.exit(1)
         (server_cmd, server_data) = outpipe.recv()
         if len(server_data) != len(client_measurements):
-            # print(server_data)
-            # print(proc_result)
             logger.error(f"Process on port {port} out of sync {len(server_data)} != {len(client_measurements)}")
             sys.exit(1)
 
