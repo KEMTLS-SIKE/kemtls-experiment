@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union, Literal
 import sys
 
+import itertools
+
 # Mininet simulation
 
 from mininet.topo import Topo
@@ -30,9 +32,7 @@ from mininet.clean import Cleanup
 ###################################################################################################
 
 # Original set of latencies
-#LATENCIES = ['2.684ms', '15.458ms', '39.224ms', '97.73ms']
-#LATENCIES = ["2.0ms"]
-LATENCIES = [15] # in ms #'15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
+LATENCIES = [0, 2.5, 7.5, 15] # in ms #'15.458ms']#, '97.73ms'] #['2.684ms', '15.458ms', '97.73ms']  #['15.458ms', '97.73ms']
 LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
 
 # xvzcf's experiment used POOL_SIZE = 40
@@ -135,15 +135,21 @@ ALGORITHMS = [
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
 
     # Only crypto
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED1CCA", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
+    *itertools.chain(*[
+        [
+            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR], protocol=protocol),
+            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=protocol),
+            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, protocol=protocol),
 
-    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
-    Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=QUIC),
-    # Experiment('sign', "SIKEP434COMPRESSED", "RSA2048", "RSA2048", "RSA2048", options=[OPTION_ASYNC_ENCAPS], protocol=QUIC),
+            Experiment('sign', "SIKEP434COMPRESSED", *signatures, protocol=protocol),
+            Experiment('sign', "SIKEP434COMPRESSED", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
+            Experiment('sign', "SIKEP434COMPRESSED", *signatures, options=[OPTION_ASYNC_ENCAPS], protocol=protocol),
 
-    Experiment('sign', "KYBER512", "RSA2048", "RSA2048", "RSA2048", protocol=QUIC),
-
+            Experiment('sign', "KYBER512", *signatures, protocol=protocol),
+        ]
+        for signatures in [["Falcon512", "XMSS", "RainbowICircumzenithal"], ["RSA2048", "RSA2048", "RSA2048"]]
+        for protocol in ["tls", QUIC]
+    ]),
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
     # # EXPERIMENT - KEX - LEAF - INT - ROOT - CLIENT AUTH - CLIENT CA

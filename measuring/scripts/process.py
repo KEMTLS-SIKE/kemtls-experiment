@@ -108,7 +108,7 @@ AVG_FIELDS = [
     "options",
     "protocol",
     "int-only",
-    "rtt",
+    "latency",
     "drop_rate",
     "rate",
     "measurements",
@@ -180,7 +180,7 @@ AVG_FIELDS = [
 
 
 def format_results_tex(avgs):
-    latency = float(avgs["rtt"])
+    latency = float(avgs["latency"])
     loss = avgs["drop_rate"]
     rate = avgs["rate"]
 
@@ -225,7 +225,7 @@ def write_averages(experiments):
             #print(f"{name}: from {avgs['filename']}")
 
             # Sanity check
-            assert (name, avgs["rtt"]) not in names, f"Already seen {name}"
+            assert (name, avgs["latency"]) not in names, f"Already seen {name}"
             names.add(name)
             
             if 'client received server reply' in avgs: # does not exist in quic
@@ -240,7 +240,7 @@ EXPERIMENT_REGEX = re.compile(
     r"(?P<kex>[^_]+)_(?P<leaf>[^_]+)_(?P<int>[^_]+)(_(?P<root>[^_]+))?"
     r"(_clauth_(?P<clauth>[^_]+)_(?P<clca>[^_]+))?"
     r"(?P<options>_options_\([^\)]+\))?"
-    r"_(?P<rtt>\d+(\.\d+)?)ms_((?P<protocol>quic)_)?(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
+    r"_(?P<latency>\d+(\.\d+)?)ms_((?P<protocol>quic)_)?(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
 )
 
 
@@ -266,7 +266,7 @@ def get_experiment(filename):
         "clca",
         "options",
         "protocol",
-        "rtt",
+        "latency",
         "drop_rate",
         "rate",
     ]:
