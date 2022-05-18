@@ -18,5 +18,5 @@
 	url = https://github.com/KEMTLS-SIKE/oqs-rs.git
 [submodule "quinn"]
 	path = quinn
-	url = git@github.com:quinn-rs/quinn.git
+	url = https://github.com/quinn-rs/quinn.git
 	branch = 0.7.x

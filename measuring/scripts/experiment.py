@@ -38,7 +38,7 @@ LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
 ITERATIONS = 2
-POOL_SIZE = 1
+POOL_SIZE = 24
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
