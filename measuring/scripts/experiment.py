@@ -22,7 +22,6 @@ import itertools
 
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.node import CPULimitedHost
 from mininet.link import TCLink
 from mininet.util import irange
 from mininet.clean import Cleanup
@@ -138,6 +137,7 @@ ALGORITHMS = [
     *itertools.chain(*[
         [
             Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR], protocol=protocol),
+            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
             Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=protocol),
             Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, protocol=protocol),
 
@@ -514,7 +514,7 @@ def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, de
     # Start Mininet
     logger.debug('starting mininet')
     topo = BenchmarkTopo(delay, pkt_loss, rate)
-    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
+    net = Mininet(topo=topo, link=TCLink, controller=None)
     net.start()
 
     # define the server's IP in /etc/hosts
