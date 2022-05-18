@@ -10,7 +10,7 @@ import statistics
 import multiprocessing
 
 
-DATAPATH = pathlib.Path(__file__).parent.absolute().parent / "data"
+DATAPATH = pathlib.Path(__file__).parent.absolute().parent / "dataremote"
 PROCESSED_PATH = DATAPATH / ".." / "processed"
 
 

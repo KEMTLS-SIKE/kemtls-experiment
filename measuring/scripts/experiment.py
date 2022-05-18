@@ -43,6 +43,8 @@ SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
 MEASUREMENTS_PER_CLIENT = 500
 
+REDO_EXPERIMENTS = False
+
 ###################################################################################################
 
 # Mininet topology
@@ -367,7 +369,7 @@ class ServerProcess(multiprocessing.Process):
                         logger.warning("Resetting measurement")
                         measurements = {}
                     else:
-                        raise ValueError(f"label '{label}' already exisited in measurement")
+                        raise ValueError(f"label '{label}' already existed in measurement")
                 measurements[label] = result.group("timing")
                 if label == self.last_msg:
                     collected_measurements.append(measurements)
@@ -455,13 +457,13 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
             )
             try:
                 logger.debug('starting client')
-                proc_result = p.communicate(timeout=10 * MEASUREMENTS_PER_CLIENT)
+                proc_result = p.communicate(timeout=1 * MEASUREMENTS_PER_CLIENT)
                 logger.debug('communication client')
 
             except subprocess.TimeoutExpired:
                 logger.exception("Server has hung itself, restarting measurements")
                 p.kill()
-                logger.exception("client {}", p.communicate())
+                #logger.exception("client {}", p.communicate())
 
                 client_measurements.clear()
                 server.terminate()
@@ -514,7 +516,7 @@ def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, de
     # Start Mininet
     logger.debug('starting mininet')
     topo = BenchmarkTopo(delay, pkt_loss, rate)
-    net = Mininet(topo=topo, link=TCLink, controller=None)
+    net = Mininet(topo=topo, link=TCLink)
     net.start()
 
     # define the server's IP in /etc/hosts
@@ -692,6 +694,11 @@ def main():
             fngetter = partial(get_filename,
                 experiment, int_only, latency_ms, pkt_loss, rate,
             )
+            
+            if not REDO_EXPERIMENTS and os.path.exists(fngetter("csv")):
+                logger.info("passing experiment already done")
+                continue
+
             start_time = datetime.datetime.utcnow()
             for _ in range(ITERATIONS):
                 result += experiment_run_timers(experiment, int_only, pkt_loss, delay=latency_ms, rate=rate)
