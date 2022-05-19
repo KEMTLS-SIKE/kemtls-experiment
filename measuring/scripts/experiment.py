@@ -470,8 +470,10 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
                 server.kill()
                 time.sleep(15)
                 server.join(5)
+
                 server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
                 server.start()
+                time.sleep(4)
                 continue
 
             logger.debug(f"Completed measurements on port {port}")
@@ -690,7 +692,7 @@ def main():
                 f"and {pkt_loss}% loss on {rate}mbit"
             )
 
-            result = []
+            result = ["", "", "", []]
             fngetter = partial(get_filename,
                 experiment, int_only, latency_ms, pkt_loss, rate,
             )
@@ -701,7 +703,9 @@ def main():
 
             start_time = datetime.datetime.utcnow()
             for _ in range(ITERATIONS):
-                result += experiment_run_timers(experiment, int_only, pkt_loss, delay=latency_ms, rate=rate)
+                ret = experiment_run_timers(experiment, int_only, pkt_loss, delay=latency_ms, rate=rate)[2]
+                result[0:2] = ret[0:2]
+                result[2] += ret[2] 
             duration = datetime.datetime.utcnow() - start_time
             logger.info("took %s", duration)
 
