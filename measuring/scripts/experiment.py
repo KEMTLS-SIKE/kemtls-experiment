@@ -298,10 +298,11 @@ def change_qdisc(ns, dev, pkt_loss, delay, rate=1000) -> None:
     run_subprocess(command)
 
 class ServerProcess(multiprocessing.Process):
-    def __init__(self, port, pipe, experiment: Experiment, cached_int=False):
+    def __init__(self, process_id, port, pipe, experiment: Experiment, cached_int=False):
         super().__init__(daemon=False)
         self.experiment = experiment
         self.path = get_experiment_path(experiment)
+        self.process_id = process_id
         self.port = port
         self.pipe = pipe
         self.last_msg = "HANDSHAKE COMPLETED"
@@ -322,7 +323,10 @@ class ServerProcess(multiprocessing.Process):
             self.clientauthopts = ["--require-auth", "--auth", "client-ca.crt"]
 
     def run(self):
+        cpus = (2*self.process_id, 2*self.process_id+1) # 2 CPUs per experience
+
         cmd = [
+            "taskset", "-c", f"{cpus[0]}-{cpus[1]}",
             "ip", "netns", "exec", "srv_ns",
             f"./{self.servername}",
             "--certs", self.certname,
@@ -392,11 +396,13 @@ class ServerProcess(multiprocessing.Process):
             self.server_process.kill()
 
 
-def run_measurement(output_queue, port, experiment: Experiment, cached_int):
+def run_measurement(output_queue, process_id, port, experiment: Experiment, cached_int):
     try:
+        cpus = (2*process_id, 2*process_id+1)
+
         logger.debug('starting server')
         (inpipe, outpipe) = multiprocessing.Pipe()
-        server = ServerProcess(port, inpipe, experiment, cached_int)
+        server = ServerProcess(process_id, port, inpipe, experiment, cached_int)
         server.start()
         time.sleep(4)
 
@@ -432,6 +438,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
         while len(client_measurements) < MEASUREMENTS_PER_PROCESS and server.is_alive() and restarts < allowed_restarts:
             logger.debug(f"Starting measurements on {port}")
             cmd = [
+                "taskset", "-c", f"{cpus[0]}-{cpus[1]}",
                 "ip", "netns", "exec", "cli_ns",
                 f"./{clientname}",
                 "--cafile", caname,
@@ -471,7 +478,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
                 time.sleep(15)
                 server.join(5)
 
-                server = ServerProcess(port, inpipe, experiment, cached_int)
+                server = ServerProcess(process_id, port, inpipe, experiment, cached_int)
                 server.start()
                 time.sleep(4)
                 continue
@@ -515,7 +522,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int):
 
 def experiment_run_timers(experiment: Experiment, cached_int: bool) -> Tuple[str, str, List[Dict[str, Any]]]:
     path = get_experiment_path(experiment)
-    tasks = [(port, experiment, cached_int) for port in SERVER_PORTS]
+    tasks = [(process_id, port, experiment, cached_int) for process_id, port in enumerate(SERVER_PORTS)]
     output_queue = multiprocessing.Queue()
     processes = [
         multiprocessing.Process(target=run_measurement, args=(output_queue, *args))
