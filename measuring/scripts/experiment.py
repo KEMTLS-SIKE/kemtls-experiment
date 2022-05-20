@@ -18,14 +18,6 @@ import sys
 
 import itertools
 
-# Mininet simulation
-
-from mininet.topo import Topo
-from mininet.net import Mininet
-from mininet.link import TCLink
-from mininet.util import irange
-from mininet.clean import Cleanup
-
 ###################################################################################################
 ## SETTTINGS ######################################################################################
 ###################################################################################################
@@ -37,7 +29,7 @@ LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
 ITERATIONS = 2
-POOL_SIZE = 24
+POOL_SIZE = 10
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
 MEASUREMENTS_PER_PROCESS = 500
@@ -46,25 +38,6 @@ MEASUREMENTS_PER_CLIENT = 500
 REDO_EXPERIMENTS = False
 
 ###################################################################################################
-
-# Mininet topology
-class BenchmarkTopo( Topo ):
-    "Simple topology with latency."
-    def __init__(self, latency, loss, rate):
-        "Create custom topo."
-
-        # Initialize topology
-        Topo.__init__( self )
-
-        # Add hosts and switches
-        s = self.addSwitch( 's0' )
-
-        client = self.addHost('client')
-        server = self.addHost('server')
-
-        # Add links
-        self.addLink(client, s, delay=str(latency)+"ms", bw=rate, loss=loss)
-        self.addLink(s, server)
 
 SCRIPTDIR = Path(sys.path[0]).resolve()
 sys.path.append(str(SCRIPTDIR.parent.parent / "mk-cert"))
@@ -294,14 +267,42 @@ def only_unique_experiments(algos: List[Experiment]) -> List[Experiment]:
 
 TIMER_REGEX = re.compile(r"(?P<label>[A-Z ]+): (?P<timing>\d+) ns")
 
+def run_subprocess(command, working_dir=".", expected_returncode=0) -> str:
+    result = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=working_dir,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == expected_returncode, f"Failed to run '{command}':\n{result.stdout}"
+    return result.stdout
+
+
+def change_qdisc(ns, dev, pkt_loss, delay, rate=1000) -> None:
+    if pkt_loss == 0:
+        command = [
+            "ip", "netns", "exec", ns, "tc", "qdisc", "change", "dev", dev,
+            "root", "netem", "limit", "1000", "delay", delay,
+            "rate", f"{rate}mbit",
+        ]
+    else:
+        command = [
+            "ip", "netns", "exec", ns, "tc", "qdisc", "change", "dev", dev,
+            "root", "netem", "limit", "1000", "loss", "{0}%".format(pkt_loss),
+            "delay", delay, "rate", f"{rate}mbit",
+        ]
+
+    logger.debug(" > " + " ".join(command))
+    run_subprocess(command)
 
 class ServerProcess(multiprocessing.Process):
-    def __init__(self, port, server_node, pipe, experiment: Experiment, cached_int=False):
+    def __init__(self, port, pipe, experiment: Experiment, cached_int=False):
         super().__init__(daemon=False)
         self.experiment = experiment
         self.path = get_experiment_path(experiment)
         self.port = port
-        self.server_node = server_node
         self.pipe = pipe
         self.last_msg = "HANDSHAKE COMPLETED"
         self.servername = "tlsserver"
@@ -322,6 +323,7 @@ class ServerProcess(multiprocessing.Process):
 
     def run(self):
         cmd = [
+            "ip", "netns", "exec", "srv_ns",
             f"./{self.servername}",
             "--certs", self.certname,
             "--key", self.keyname,
@@ -338,7 +340,7 @@ class ServerProcess(multiprocessing.Process):
             cmd.append("--quic")
 
         logger.debug("Server cmd: %s", ' '.join(cmd))
-        self.server_process = self.server_node.popen(
+        self.server_process = subprocess.Popen(
             cmd,
             cwd=self.path,
             stdout=subprocess.PIPE,
@@ -354,6 +356,7 @@ class ServerProcess(multiprocessing.Process):
             and self.server_process.poll() is None
         ):
             line = output_reader.readline()
+            logger.debug("server=%s", line)
             if not line:
                 logger.debug("Invalid line from server")
                 break
@@ -390,11 +393,11 @@ class ServerProcess(multiprocessing.Process):
             self.server_process.kill()
 
 
-def run_measurement(output_queue, port, experiment: Experiment, cached_int, client_node, server_node):
+def run_measurement(output_queue, port, experiment: Experiment, cached_int):
     try:
         logger.debug('starting server')
         (inpipe, outpipe) = multiprocessing.Pipe()
-        server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
+        server = ServerProcess(port, inpipe, experiment, cached_int)
         server.start()
         time.sleep(4)
 
@@ -430,6 +433,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
         while len(client_measurements) < MEASUREMENTS_PER_PROCESS and server.is_alive() and restarts < allowed_restarts:
             logger.debug(f"Starting measurements on {port}")
             cmd = [
+                "ip", "netns", "exec", "cli_ns",
                 f"./{clientname}",
                 "--cafile", caname,
                 "--loops",
@@ -448,22 +452,19 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
                 cmd.append("--quic")
 
             logger.debug("Client cmd: %s", ' '.join(cmd))
-            p = client_node.popen(
-                cmd,
-                # text=True,
-                stdout=subprocess.PIPE,
-                # check=True,z
-                cwd=path,
-            )
             try:
                 logger.debug('starting client')
-                proc_result = p.communicate(timeout=1 * MEASUREMENTS_PER_CLIENT)
-                logger.debug('communication client')
+                proc_result = subprocess.run(
+                    cmd,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    timeout=10 * MEASUREMENTS_PER_CLIENT,
+                    check=False,
+                    cwd=path,
+                )
 
             except subprocess.TimeoutExpired:
                 logger.exception("Server has hung itself, restarting measurements")
-                p.kill()
-                #logger.exception("client {}", p.communicate())
 
                 client_measurements.clear()
                 server.terminate()
@@ -471,7 +472,7 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
                 time.sleep(15)
                 server.join(5)
 
-                server = ServerProcess(port, server_node, inpipe, experiment, cached_int)
+                server = ServerProcess(port, inpipe, experiment, cached_int)
                 server.start()
                 time.sleep(4)
                 continue
@@ -479,16 +480,15 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
             logger.debug(f"Completed measurements on port {port}")
             measurement = {}
 
-            for recv in proc_result:
-                for line in recv.decode().split("\n"):
-                    assert 'WebPKIError' not in line
-                    result = TIMER_REGEX.match(line)
-                    if result:
-                        label = result.group("label")
-                        measurement[label] = result.group("timing")
-                        if label == LAST_MSG:
-                            client_measurements.append(measurement)
-                            measurement = {}
+            for line in proc_result.stdout.split("\n"):
+                assert 'WebPKIError' not in line
+                result = TIMER_REGEX.match(line)
+                if result:
+                    label = result.group("label")
+                    measurement[label] = result.group("timing")
+                    if label == LAST_MSG:
+                        client_measurements.append(measurement)
+                        measurement = {}
             logger.debug(f"Done outputs processing")
 
             restarts += 1
@@ -514,22 +514,9 @@ def run_measurement(output_queue, port, experiment: Experiment, cached_int, clie
         traceback.print_exc()
         exit(1)
 
-def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, delay, rate=1000) -> Tuple[str, str, List[Dict[str, Any]]]:
-    # Start Mininet
-    logger.debug('starting mininet')
-    topo = BenchmarkTopo(delay, pkt_loss, rate)
-    net = Mininet(topo=topo, link=TCLink)
-    net.start()
-
-    # define the server's IP in /etc/hosts
-    client_node, server_node = net.get('client', 'server')
-    logger.debug("Add {} IP to client ".format(server_node.IP()))
-    client_node.cmd("echo '{} servername' >> /etc/hosts".format(server_node.IP()))
-
-    time.sleep(2)
-
+def experiment_run_timers(experiment: Experiment, cached_int: bool) -> Tuple[str, str, List[Dict[str, Any]]]:
     path = get_experiment_path(experiment)
-    tasks = [(port, experiment, cached_int, client_node, server_node) for port in SERVER_PORTS]
+    tasks = [(port, experiment, cached_int) for port in SERVER_PORTS]
     output_queue = multiprocessing.Queue()
     processes = [
         multiprocessing.Process(target=run_measurement, args=(output_queue, *args))
@@ -548,9 +535,6 @@ def experiment_run_timers(experiment: Experiment, cached_int: bool, pkt_loss, de
     logger.debug(f"Joining processes on {rpath} for {experiment}")
     for process in processes:
         process.join(5)
-    
-    net.stop()
-    Cleanup.cleanup()
 
     flattened = (results[0][0], results[0][1], [])
     for _, _, measurements in results:
@@ -580,7 +564,6 @@ def write_result(outfile: io.TextIOBase, outlog: io.TextIOBase, results: Tuple[s
 
     outlog.write(f"client: {client_cmd}\n")
     outlog.write(f"server: {server_cmd}\n")
-
 
 def get_filename(experiment: Experiment, int_only: bool, rtt_ms, pkt_loss, rate, ext="csv") -> Path:
     fileprefix = f"{experiment.kex}_{experiment.leaf}_{experiment.intermediate}"
@@ -670,7 +653,12 @@ def main():
         os.makedirs(dirname, exist_ok=True)
         os.chown(dirname, uid=1001, gid=1001)
 
-    for latency_ms in LATENCIES:
+    for latency in LATENCIES:
+        latency_ms = str(latency)+"ms"
+        # To get actual (emulated) RTT
+        change_qdisc("cli_ns", "cli_ve", 0, delay=latency_ms)
+        change_qdisc("srv_ns", "srv_ve", 0, delay=latency_ms)
+
         for (experiment, int_only, pkt_loss) in itertools.product(ALGORITHMS, [True, False], LOSS_RATES):
             if latency_ms == LATENCIES[0]:
                 rate = 1000
@@ -687,14 +675,17 @@ def main():
                 (f"{root} " if not int_only else "") +
                 (f"("+(",".join(options))+") " if len(options) != 0 else "") +
                 (f"(client auth: {client_auth} signed by {client_ca}) " if client_auth is not None else "") +
-                f"for {latency_ms}ms latency with "
+                f"for {latency}ms latency with "
                 f"{'intermediate only' if int_only else 'full cert chain'} "
                 f"and {pkt_loss}% loss on {rate}mbit"
             )
 
+            change_qdisc("cli_ns", "cli_ve", pkt_loss, delay=latency_ms, rate=rate)
+            change_qdisc("srv_ns", "srv_ve", pkt_loss, delay=latency_ms, rate=rate)
+
             result = ["", "", "", []]
             fngetter = partial(get_filename,
-                experiment, int_only, latency_ms, pkt_loss, rate,
+                experiment, int_only, latency, pkt_loss, rate,
             )
             
             if not REDO_EXPERIMENTS and os.path.exists(fngetter("csv")):
@@ -703,7 +694,7 @@ def main():
 
             start_time = datetime.datetime.utcnow()
             for _ in range(ITERATIONS):
-                ret = experiment_run_timers(experiment, int_only, pkt_loss, delay=latency_ms, rate=rate)[2]
+                ret = experiment_run_timers(experiment, int_only)[2]
                 result[0:2] = ret[0:2]
                 result[2] += ret[2] 
             duration = datetime.datetime.utcnow() - start_time
