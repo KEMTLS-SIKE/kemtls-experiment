@@ -356,7 +356,6 @@ class ServerProcess(multiprocessing.Process):
             and self.server_process.poll() is None
         ):
             line = output_reader.readline()
-            logger.debug("server=%s", line)
             if not line:
                 logger.debug("Invalid line from server")
                 break
@@ -660,7 +659,7 @@ def main():
         change_qdisc("srv_ns", "srv_ve", 0, delay=latency_ms)
 
         for (experiment, int_only, pkt_loss) in itertools.product(ALGORITHMS, [True, False], LOSS_RATES):
-            if latency_ms == LATENCIES[0]:
+            if latency == LATENCIES[0]:
                 rate = 1000
             else:
                 rate = 10
@@ -683,7 +682,7 @@ def main():
             change_qdisc("cli_ns", "cli_ve", pkt_loss, delay=latency_ms, rate=rate)
             change_qdisc("srv_ns", "srv_ve", pkt_loss, delay=latency_ms, rate=rate)
 
-            result = ["", "", "", []]
+            result = ["", "", []]
             fngetter = partial(get_filename,
                 experiment, int_only, latency, pkt_loss, rate,
             )
@@ -694,9 +693,10 @@ def main():
 
             start_time = datetime.datetime.utcnow()
             for _ in range(ITERATIONS):
-                ret = experiment_run_timers(experiment, int_only)[2]
-                result[0:2] = ret[0:2]
-                result[2] += ret[2] 
+                client_cmd, server_cmd, measurements = experiment_run_timers(experiment, int_only)
+                result[0] = client_cmd
+                result[1] = server_cmd
+                result[2] += measurements
             duration = datetime.datetime.utcnow() - start_time
             logger.info("took %s", duration)
 
