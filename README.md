@@ -70,3 +70,17 @@ See also the notes below.
 * The measurement setup is handled in the `measuring/` folder. See the `./run_experiment.sh` script.
 * Processing of results is done by the `./scripts/process.py` folder. It expects a `data` folder as produced by `./scripts/experiment.py`.
 * Downloading archived results can be done through the scripts in ``measuring/archived-results/``
+
+## Running the experiments on Ubuntu
+
+1. Install Docker: https://docs.docker.com/engine/install/ubuntu/
+2. Install libssl1.1 `apt install libssl1.1`
+
+   (need to add the repository first if using Ubuntu 22: `echo "deb http://security.ubuntu.com/ubuntu impish-security main" | sudo tee /etc/apt/sources.list.d/impish-security.list`)
+3. Disable dynamic frequency of CPUs: https://wiki.archlinux.org/title/CPU_frequency_scaling#Scaling_governors
+   Implement tips from LLVM' Benchmarking tips: https://www.llvm.org/docs/Benchmarking.html
+
+   Notably, disable hyperthreading : https://www.golinuxhub.com/2018/05/how-to-disable-or-enable-hyper/
+4. Configure network with `measuring/scripts/setup_ns.sh`.
+5. Run experiments with `measuring/script/experiment.py`.
+6. Process the results with `measuring/scripts/process.py` (it creates a summaries in `measuring/processed`).
