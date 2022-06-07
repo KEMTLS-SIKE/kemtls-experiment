@@ -48,10 +48,14 @@ RUN cargo build --release
 COPY webpki  /usr/src/pqtls/webpki
 COPY ring    /usr/src/pqtls/ring
 COPY rustls  /usr/src/pqtls/rustls
+COPY quinn  /usr/src/pqtls/quinn
 
 # Generate rustls build cache
-WORKDIR /usr/src/pqtls/rustls/rustls-mio
-RUN cargo build --release --examples
+WORKDIR /usr/src/pqtls/rustls/rustls
+RUN cargo build
+
+# WORKDIR /usr/src/pqtls/rustls/rustls-mio
+# RUN cargo build --release --examples
 
 # Set up certificates (will be parameterised by the env vars)
 WORKDIR  /usr/src/pqtls/mk-cert

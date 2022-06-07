@@ -49,3 +49,4 @@ path = "examples/tlsserver.rs"
 #webpki = { version = "0.21.9999", git = "https://github.com/thomwiggers/webpki.git", branch = "pq-take2" }
 webpki = { path = "../webpki" }
 rustls = { path = "../rustls/rustls" }
+quinn = { path = "../quinn/quinn" }

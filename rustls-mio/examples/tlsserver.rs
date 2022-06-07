@@ -240,7 +240,9 @@ impl Connection {
         }
 
         // Process newly-received TLS messages.
-        let processed = self.tls_session.process_new_packets();
+        let socket = &mut self.socket;
+        let processed = self.tls_session.process_new_packets(Some(socket));
+
         if processed.is_err() {
             error!("cannot process packet: {:?}", processed);
 

@@ -17,11 +17,18 @@ PROCESSED_PATH = DATAPATH / ".." / "processed"
 #: Renames for the key exchange
 KEX_RENAMES = {
     "X25519": "E",
-    "SikeP434Compressed": "Sc",
+    "SIKEP434COMPRESSED1CCA": "SconeCCA",
+    "SIKEP434COMPRESSED": "Sc",
 }
 
 SIG_RENAMES = {
     "RainbowICircumzenithal": "Rcz",
+}
+
+OPT_RENAMES = {
+    "async_keypair": "Akey",
+    "async_encaps": "Aenc",
+    "split_encaps": "Senc",
 }
 
 #: Renames for the leaf algorithm: combination of signature schemes and KEX
@@ -66,7 +73,14 @@ def get_experiment_name(experiment):
         clca = SIG_RENAMES.get(clca, clca[0].upper())
         authpart = f"auth{clauth}{clca}"
 
-    return f"{type}{kex}{leaf}{inter}{root}{authpart}"
+    optionspart = ""
+    if experiment["options"] is not None:
+        for option in experiment["options"].split(","):
+            optionname = OPT_RENAMES.get(option, option[0].upper())
+            authpart += optionname
+        
+
+    return f"{type}{kex}{leaf}{inter}{root}{authpart}{optionspart}{'Quic' if experiment['protocol'] == 'quic' else ''}"
 
 
 def read_csv_lines(filename):
@@ -239,7 +253,7 @@ EXPERIMENT_REGEX = re.compile(
     r"(?P<type>(kemtls|sign|sign-cached|pdk))-(?P<cached>(int-chain|int-only))/"
     r"(?P<kex>[^_]+)_(?P<leaf>[^_]+)_(?P<int>[^_]+)(_(?P<root>[^_]+))?"
     r"(_clauth_(?P<clauth>[^_]+)_(?P<clca>[^_]+))?"
-    r"(?P<options>_options_\([^\)]+\))?"
+    r"(_options_\((?P<options>[^\)]+)\))?"
     r"_(?P<latency>\d+(\.\d+)?)ms_((?P<protocol>quic)_)?(?P<drop_rate>\d+(\.\d+)?)_(?P<rate>\d+mbit).csv"
 )
 
