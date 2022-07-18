@@ -28,12 +28,12 @@ LOSS_RATES = [0]     #[ 0.1, 0.5, 1, 1.5, 2, 2.5, 3] + list(range(4, 21)):
 
 # xvzcf's experiment used POOL_SIZE = 40
 # We start as many servers as clients, so make sure to adjust accordingly
-ITERATIONS = 2
-POOL_SIZE = 10
+ITERATIONS = 10
+POOL_SIZE = 1 # 10
 START_PORT = 10000
 SERVER_PORTS = [str(port) for port in range(10000, 10000+POOL_SIZE)]
-MEASUREMENTS_PER_PROCESS = 500
-MEASUREMENTS_PER_CLIENT = 500
+MEASUREMENTS_PER_PROCESS = 1000
+MEASUREMENTS_PER_CLIENT = 1000
 
 REDO_EXPERIMENTS = False
 
@@ -108,21 +108,21 @@ ALGORITHMS = [
 
     # Experiment('sign', "KYBER512", "Falcon512", "XMSS", "RainbowICircumzenithal"),
 
-    # Only crypto
+    # # Only crypto
     *itertools.chain(*[
         [
-            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR], protocol=protocol),
-            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
-            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=protocol),
-            Experiment('sign', "SIKEP434COMPRESSED1CCA", *signatures, protocol=protocol),
+            Experiment('sign', f"SIKEP{kex_size}COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
+            Experiment('sign', f"SIKEP{kex_size}COMPRESSED1CCA", *signatures, protocol=protocol),
 
-            Experiment('sign', "SIKEP434COMPRESSED", *signatures, protocol=protocol),
-            Experiment('sign', "SIKEP434COMPRESSED", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
-            Experiment('sign', "SIKEP434COMPRESSED", *signatures, options=[OPTION_ASYNC_ENCAPS], protocol=protocol),
+            Experiment('sign', f"SIKEP{kex_size}COMPRESSED", *signatures, protocol=protocol),
+            Experiment('sign', f"SIKEP{kex_size}COMPRESSED", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_ASYNC_ENCAPS], protocol=protocol),
 
             Experiment('sign', "KYBER512", *signatures, protocol=protocol),
-        ]
-        for signatures in [["Falcon512", "XMSS", "RainbowICircumzenithal"], ["RSA2048", "RSA2048", "RSA2048"]]
+        ] + ([] if protocol == QUIC else [
+            Experiment('sign', f"SIKEP{kex_size}COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=protocol),
+        ])
+        for kex_size in ["434", "503", "610", "751"]
+        for signatures in [["Falcon512", "Falcon512", "Falcon512"], ["Falcon512", "XMSS", "RainbowICircumzenithal"], ["RSA2048", "RSA2048", "RSA2048"]]
         for protocol in ["tls", QUIC]
     ]),
     
