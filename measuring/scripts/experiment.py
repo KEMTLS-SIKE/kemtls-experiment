@@ -127,6 +127,7 @@ ALGORITHMS = [
             [["RSA2048", "RSA2048", "RSA2048"], "tls"],
             [["Falcon512", "Falcon512", "Falcon512"], QUIC],
         ]
+        if not (kex_size != "434" and protocol == QUIC)
     ]),
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
