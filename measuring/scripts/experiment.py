@@ -122,7 +122,7 @@ ALGORITHMS = [
             Experiment('sign', f"SIKEP{kex_size}COMPRESSED1CCA", *signatures, options=[OPTION_ASYNC_KEYPAIR, OPTION_SPLIT_ENCAPS], protocol=protocol),
         ])
         for kex_size in ["434", "503", "610", "751"]
-        for signatures in [["Falcon512", "Falcon512", "Falcon512"], ["Falcon512", "XMSS", "RainbowICircumzenithal"], ["RSA2048", "RSA2048", "RSA2048"]]
+        for signatures in [["Falcon512", "Falcon512", "Falcon512"], ["RSA2048", "RSA2048", "RSA2048"]]
         for protocol in ["tls", QUIC]
     ]),
     
