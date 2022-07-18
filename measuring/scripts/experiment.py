@@ -123,7 +123,11 @@ ALGORITHMS = [
         ])
         for kex_size in ["434", "503", "610", "751"]
         for signatures in [["Falcon512", "Falcon512", "Falcon512"], ["RSA2048", "RSA2048", "RSA2048"]]
-        for protocol in ["tls", QUIC]
+        for signatures, protocol in [
+            [["Falcon512", "Falcon512", "Falcon512"], "tls"],
+            [["RSA2048", "RSA2048", "RSA2048"], "tls"],
+            [["Falcon512", "Falcon512", "Falcon512"], QUIC],
+        ]
     ]),
     
     # # Need to specify leaf always as sigalg to construct correct binary directory
