@@ -71,7 +71,7 @@ See also the notes below.
 * Processing of results is done by the `./scripts/process.py` folder. It expects a `data` folder as produced by `./scripts/experiment.py`.
 * Downloading archived results can be done through the scripts in ``measuring/archived-results/``
 
-## Running the experiments on Ubuntu
+## Running the experiments on Ubuntu 20
 
 1. Install Docker: https://docs.docker.com/engine/install/ubuntu/
 2. Install libssl1.1 `apt install libssl1.1`
