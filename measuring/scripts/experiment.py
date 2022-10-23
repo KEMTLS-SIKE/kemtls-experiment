@@ -458,6 +458,8 @@ def run_measurement(output_queue, process_id, port, experiment: Experiment, cach
             ]
             if OPTION_ASYNC_KEYPAIR in experiment.options:
                 cmd.append(f"--async-keypair")
+            if OPTION_ASYNC_ENCAPS in self.experiment.options:
+                cmd.append("--async-encapsulation")
             if experiment.protocol == QUIC:
                 cmd.append("--quic")
 

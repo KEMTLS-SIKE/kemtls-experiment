@@ -335,6 +335,7 @@ Options:
     --verbose             Emit log output.
     --mtu MTU             Limit outgoing messages to MTU bytes.
     --async-keypair       Generate keypairs asynchronously.
+    --async-encapsulate   Compute encapsulate asynchronously.
     --quic                Use quic instead of TLS.
     --version, -v         Show tool version.
     --help, -h            Show this screen.
@@ -360,6 +361,7 @@ struct Args {
     arg_hostname: String,
     flag_loops: Option<usize>,
     flag_async_keypair: bool,
+    flag_async_encapsulate: bool,
     flag_quic: bool,
 }
 
@@ -567,6 +569,7 @@ fn make_config(args: &Args, config: &mut rustls::ClientConfig) -> Result<()> {
     }
 
     config.async_keypair = args.flag_async_keypair;
+    config.async_encapsulate = args.flag_async_encapsulate;
 
     // Pre-compute the batch of keys, so that the first call doesn't count in the benchmark
     if config.async_keypair {
